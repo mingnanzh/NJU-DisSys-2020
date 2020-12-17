@@ -346,9 +346,9 @@ func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *App
 		return ok
 	}
 	if reply.Success {
-		rf.NextIndex[server] = rf.NextIndex[server] + len(args.Entries)
+		rf.NextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
 		rf.MatchIndex[server] = rf.NextIndex[server] - 1
-		//fmt.Printf("ID %d sendAppendEntries(PrevLogIndex %d) to ID %d, %v.\nUpdate NextIndex[%d]:%d, MatchIndex[%d]: %d \n", rf.Me, args.PrevLogIndex, server, reply.Success, server, rf.NextIndex[server], server, rf.MatchIndex[server])
+		//fmt.Printf("ID %d sendAppendEntries[%v] to ID %d, %v.\nUpdate NextIndex[%d]:%d, MatchIndex[%d]: %d, Log size: %d\n", rf.Me, args, server, reply.Success, server, rf.NextIndex[server], server, rf.MatchIndex[server],len(rf.Log))
 		rf.commitLogs()
 		//rf.reply()
 		//fmt.Printf("····································\n")
@@ -544,11 +544,11 @@ func (rf *Raft) loop() {
 				rf.Mu.Unlock()
 				//var new_log Logs
 				//fmt.Printf("ID %v, leader, Term %v\n", rf.Me, rf.CurrentTerm)
-				timer := time.NewTimer(time.Duration(10) * time.Millisecond)
+				timer := time.NewTimer(time.Duration(50)+25 * time.Millisecond)
 				<-timer.C
-				rf.sendHeartBeatToAll()
 				rf.Mu.Lock()
 				if rf.State == Leader {
+					go rf.sendHeartBeatToAll()
 					go rf.commitLogs()
 					go rf.sendApplyEntriesToAll()
 					go rf.reply()
