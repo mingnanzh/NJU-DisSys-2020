@@ -544,7 +544,7 @@ func (rf *Raft) loop() {
 				rf.Mu.Unlock()
 				//var new_log Logs
 				//fmt.Printf("ID %v, leader, Term %v\n", rf.Me, rf.CurrentTerm)
-				timer := time.NewTimer(time.Duration(50)+25 * time.Millisecond)
+				timer := time.NewTimer(time.Duration(50) + 25*time.Millisecond)
 				<-timer.C
 				rf.Mu.Lock()
 				if rf.State == Leader {
