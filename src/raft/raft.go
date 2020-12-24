@@ -59,26 +59,23 @@ type Raft struct {
 	Persister *Persister
 	Me        int // index into Peers[]
 
-	// Your data here.
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
 	ApplyCh chan ApplyMsg
 
 	// persistent state on all servers
-	HeartBeatSignal bool
-	State           int
-	CurrentTerm     int
-	VotedFor        int
-	VoteCount       int
-	Log             []Logs
+	HeartBeatSignal bool   // indicate whether this server receives a heartbeat
+	State           int    // follower, candidate or leader
+	CurrentTerm     int    // lastest term server has seen
+	VotedFor        int    // candidateID that received vote in current term
+	VoteCount       int    // vote counter
+	Log             []Logs // log entries
 
 	// volatile state on all servers
-	CommitIndex int
-	LastApplied int
+	CommitIndex int // index of highest log entry known to be committed
+	LastApplied int // index of highest log entry applied to state machine
 
 	// volatile state on leaders (reinitialized after election)
-	NextIndex  []int
-	MatchIndex []int
+	NextIndex  []int // for each server, index of the next log entry to send to that server
+	MatchIndex []int // for each server, index of highest log entry known to be replicated on server
 }
 
 func min(a, b int) int {
@@ -130,44 +127,47 @@ func (rf *Raft) readPersist(data []byte) {
 }
 
 //
-// example RequestVote RPC arguments structure.
+// RequestVote RPC arguments structure.
 //
 type RequestVoteArgs struct {
-	// Your data here.
 	Term         int // candidate's Term
 	CandidateID  int // candidate requesting vote
-	LastLogIndex int
-	LastLogTerm  int
+	LastLogIndex int // index of candidate’s last log entry
+	LastLogTerm  int // term of candidate’s last log entry
 }
 
 //
-// example RequestVote RPC reply structure.
+// RequestVote RPC reply structure.
 //
 type RequestVoteReply struct {
-	// Your data here.
 	Term        int  // CurrentTerm, for candidate to update itself
 	VoteGranted bool // true means candidate received vote
 }
 
+//
+// AppendEntries RPC arguments structure.
+//
 type AppendEntriesArgs struct {
-	Term         int // leader's Term
-	LeaderID     int // so follower can redirect clients
-	PrevLogIndex int
-	PrevLogTerm  int
-	Entries      []Logs
-	LeaderCommit int
+	Term         int    // leader's Term
+	LeaderID     int    // so follower can redirect clients
+	PrevLogIndex int    // index of log entry immediately preceding new ones
+	PrevLogTerm  int    // term of prevLogIndex entry
+	Entries      []Logs // log entries to store (empty for heartbeat; may send more than one for efficiency)
+	LeaderCommit int    // leader’s commitIndex
 }
 
+//
+// AppendEntries RPC reply structure.
+//
 type AppendEntriesReply struct {
 	Term    int  // CurrentTerm, for leader to update itself
 	Success bool // true if follower contained entry matching PrevLogIndex and PrevLogTerm
 }
 
 //
-// example RequestVote RPC handler.
+// RequestVote RPC handler.
 //
 func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here.
 	rf.Mu.Lock()
 	defer rf.Mu.Unlock()
 	switch state := rf.State; state {
@@ -238,6 +238,9 @@ func confirmAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntri
 	fmt.Printf("confirmAppendEntries: [%d, src:%d, term %d,PrevLogIndex %d,PrevLogTerm %d, Entries: %v] Log size now: %d\n", server, args.LeaderID, args.Term, args.PrevLogIndex, args.PrevLogTerm, args.Entries, size)
 }
 
+//
+// AppendEntries RPC handler.
+//
 func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.Mu.Lock()
 	defer rf.Mu.Unlock()
@@ -270,21 +273,7 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 }
 
 //
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.Peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
 // returns true if labrpc says the RPC was delivered.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
 //
 func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.Peers[server].Call("Raft.RequestVote", args, reply)
@@ -308,7 +297,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 		rf.VoteCount += 1
 		if rf.VoteCount > len(rf.Peers)/2 && rf.VoteCount != 1 {
 			rf.State = Leader
-			//fmt.Printf("ID %d is leader now in Term %d, Log %v\n", rf.Me, rf.CurrentTerm, rf.Log)
+			fmt.Printf("ID %d is leader now in Term %d, Log %v\n", rf.Me, rf.CurrentTerm, rf.Log)
 			for i := 0; i < len(rf.Peers); i++ {
 				rf.NextIndex[i] = len(rf.Log)
 				rf.MatchIndex[i] = 0
@@ -320,12 +309,13 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 			rf.sendHeartBeatToAll()
 			rf.Mu.Lock()
 		}
-	} else {
-		//fmt.Printf("ID %d send to ID %d, failed3 in term %d.\n", rf.Me, server, rf.CurrentTerm)
 	}
 	return ok
 }
 
+//
+// returns true if labrpc says the RPC was delivered.
+//
 func (rf *Raft) sendAppendEntries(server int, args AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.Peers[server].Call("Raft.AppendEntries", args, reply)
 	if !ok {
@@ -521,7 +511,6 @@ func (rf *Raft) loop() {
 		case Candidate:
 			{
 				rf.Mu.Unlock()
-
 				//fmt.Printf("ID %v, candidate,VoteCount %d, Term %v\n", rf.Me, rf.VoteCount, rf.CurrentTerm)
 				timer := time.NewTimer(time.Duration(rand.Intn(150)+150) * time.Millisecond)
 				<-timer.C
@@ -542,7 +531,6 @@ func (rf *Raft) loop() {
 		case Leader:
 			{
 				rf.Mu.Unlock()
-				//var new_log Logs
 				//fmt.Printf("ID %v, leader, Term %v\n", rf.Me, rf.CurrentTerm)
 				timer := time.NewTimer(time.Duration(50) + 25*time.Millisecond)
 				<-timer.C
