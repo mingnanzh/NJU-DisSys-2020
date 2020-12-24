@@ -297,7 +297,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 		rf.VoteCount += 1
 		if rf.VoteCount > len(rf.Peers)/2 && rf.VoteCount != 1 {
 			rf.State = Leader
-			fmt.Printf("ID %d is leader now in Term %d, Log %v\n", rf.Me, rf.CurrentTerm, rf.Log)
+			//fmt.Printf("ID %d is leader now in Term %d, Log %v\n", rf.Me, rf.CurrentTerm, rf.Log)
 			for i := 0; i < len(rf.Peers); i++ {
 				rf.NextIndex[i] = len(rf.Log)
 				rf.MatchIndex[i] = 0
